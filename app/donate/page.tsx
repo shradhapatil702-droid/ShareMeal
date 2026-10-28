@@ -2,15 +2,60 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+import { Amplify } from "aws-amplify";
+import { generateClient } from "aws-amplify/data";
+import outputs from "../../amplify_outputs.json";
+import type { Schema } from "../../amplify/data/resource";
 import styles from "./donate.module.css";
+
+Amplify.configure(outputs);
+
+const client = generateClient<Schema>();
 
 export default function DonatePage() {
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitted(true);
+    setSaving(true);
+    setError("");
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      const result = await client.models.Donation.create({
+        foodName: String(formData.get("foodName")),
+        quantity: String(formData.get("quantity")),
+        foodType: String(formData.get("foodType")),
+        pickupLocation: String(formData.get("pickupLocation")),
+        pickupTime: String(formData.get("pickupTime")),
+        notes: String(formData.get("notes") || ""),
+      });
+
+      if (result.errors?.length) {
+        throw new Error(result.errors.map((item) => item.message).join(", "));
+      }
+
+      if (!result.data) {
+        throw new Error("The donation was not saved. Please try again.");
+      }
+
+      setSubmitted(true);
+      form.reset();
+    } catch (err) {
+      console.error("Donation save failed:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not save your donation. Please try again."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -29,17 +74,14 @@ export default function DonatePage() {
         <h1>Share a meal.<br />Spread kindness.</h1>
         <p className={styles.intro}>
           Have extra food? Tell us about it and help someone in your
-          community. This first version demonstrates the donation form.
+          community.
         </p>
 
         {submitted ? (
           <div className={styles.success}>
             <span>💚</span>
             <h2>Thank you for your kindness!</h2>
-            <p>
-              Your form was submitted in this demo. The information has
-              not been saved to a database yet.
-            </p>
+            <p>Your donation was saved successfully.</p>
             <button onClick={() => setSubmitted(false)}>
               Add another donation
             </button>
@@ -95,12 +137,19 @@ export default function DonatePage() {
               rows={3}
             />
 
-            <button className={styles.submit} type="submit">
-              Submit donation
+            {error && <p role="alert">{error}</p>}
+
+            <button
+              className={styles.submit}
+              type="submit"
+              disabled={saving}
+            >
+              {saving ? "Saving donation..." : "Submit donation"}
             </button>
 
             <p className={styles.disclaimer}>
-              Demo only: please don't enter private or sensitive information.
+              Please share only a general pickup location, not private
+              or sensitive information.
             </p>
           </form>
         )}

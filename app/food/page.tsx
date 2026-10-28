@@ -1,41 +1,66 @@
 
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { Amplify } from "aws-amplify";
+import { generateClient } from "aws-amplify/data";
+import outputs from "../../amplify_outputs.json";
+import type { Schema } from "../../amplify/data/resource";
 import styles from "./food.module.css";
 
-const meals = [
-  {
-    id: 1,
-    emoji: "🍱",
-    title: "Fresh Homemade Lunch",
-    description: "A freshly prepared vegetarian meal.",
-    quantity: "3 meal portions",
-    location: "Community pickup point",
-    category: "Vegetarian",
-    color: "peach",
-  },
-  {
-    id: 2,
-    emoji: "🥗",
-    title: "Healthy Veg Meal",
-    description: "A simple, wholesome meal to share.",
-    quantity: "2 meal portions",
-    location: "Community pickup point",
-    category: "Healthy",
-    color: "green",
-  },
-  {
-    id: 3,
-    emoji: "🍞",
-    title: "Bread and Snacks",
-    description: "Bread and snacks available for sharing.",
-    quantity: "4 portions",
-    location: "Community pickup point",
-    category: "Snacks",
-    color: "yellow",
-  },
-];
+Amplify.configure(outputs);
+
+const client = generateClient<Schema>();
+
+type Donation = Schema["Donation"]["type"];
+
+function getFoodStyle(foodType: string) {
+  if (foodType === "Vegetarian" || foodType === "Vegan") {
+    return "green";
+  }
+  if (foodType === "Snacks and bakery") {
+    return "yellow";
+  }
+  return "peach";
+}
+
+function getFoodEmoji(foodType: string) {
+  if (foodType === "Vegetarian") return "🍱";
+  if (foodType === "Vegan") return "🥗";
+  if (foodType === "Non-vegetarian") return "🍛";
+  if (foodType === "Snacks and bakery") return "🍞";
+  return "🍽️";
+}
 
 export default function AvailableFoodPage() {
+  const [meals, setMeals] = useState<Donation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function loadDonations() {
+      try {
+        const result = await client.models.Donation.list();
+
+        if (result.errors?.length) {
+          throw new Error(
+            result.errors.map((item) => item.message).join(", ")
+          );
+        }
+
+        setMeals(result.data);
+      } catch (err) {
+        console.error("Could not load donations:", err);
+        setError("We couldn't load donations right now. Please try again later.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadDonations();
+  }, []);
+
   return (
     <main className={styles.page}>
       <header className={styles.header}>
@@ -57,7 +82,7 @@ export default function AvailableFoodPage() {
         </p>
 
         <div className={styles.note}>
-          🌱 These are sample listings for our first version.
+          🌱 Listings submitted by our community appear here.
         </div>
       </section>
 
@@ -68,31 +93,39 @@ export default function AvailableFoodPage() {
             <h2>Available meals</h2>
           </div>
           <span className={styles.count}>
-            {meals.length} sample listings
+            {loading ? "Loading..." : `${meals.length} listings`}
           </span>
         </div>
+
+        {loading && <p>Loading community donations...</p>}
+
+        {error && <p role="alert">{error}</p>}
+
+        {!loading && !error && meals.length === 0 && (
+          <p>No donations yet. Be the first to share a meal!</p>
+        )}
 
         <div className={styles.grid}>
           {meals.map((meal) => (
             <article className={styles.card} key={meal.id}>
               <div
-                className={`${styles.foodImage} ${styles[meal.color]}`}
-                aria-label={meal.title}
+                className={`${styles.foodImage} ${styles[getFoodStyle(meal.foodType)]}`}
+                aria-label={meal.foodName}
                 role="img"
               >
-                <span>{meal.emoji}</span>
-                <span className={styles.available}>Sample</span>
+                <span>{getFoodEmoji(meal.foodType)}</span>
+                <span className={styles.available}>Available</span>
               </div>
 
               <div className={styles.cardBody}>
                 <span className={styles.category}>
-                  {meal.category}
+                  {meal.foodType}
                 </span>
 
-                <h3>{meal.title}</h3>
-                <p className={styles.description}>
-                  {meal.description}
-                </p>
+                <h3>{meal.foodName}</h3>
+                {meal.notes && (
+                  <p className={styles.description}>{meal.notes}</p>
+                )}
 
                 <div className={styles.detail}>
                   <span>🍽️</span>
@@ -101,7 +134,12 @@ export default function AvailableFoodPage() {
 
                 <div className={styles.detail}>
                   <span>📍</span>
-                  <span>{meal.location}</span>
+                  <span>{meal.pickupLocation}</span>
+                </div>
+
+                <div className={styles.detail}>
+                  <span>🕒</span>
+                  <span>Available until: {meal.pickupTime}</span>
                 </div>
               </div>
             </article>
@@ -111,6 +149,8 @@ export default function AvailableFoodPage() {
 
       <footer className={styles.footer}>
         <p>Good food deserves to be shared. 💚</p>
+        <Link href="/donate">Donate food</Link>
+        {" · "}
         <Link href="/">Return to ShareMeal home</Link>
       </footer>
     </main>
